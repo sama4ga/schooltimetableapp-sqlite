@@ -77,6 +77,68 @@ Namespace My
                 Me("end_time") = value
             End Set
         End Property
+        
+        <Global.System.Configuration.ApplicationScopedSettingAttribute(),  _
+         Global.System.Diagnostics.DebuggerNonUserCodeAttribute(),  _
+         Global.System.Configuration.DefaultSettingValueAttribute("KING'S KIDS CHRISTIAN INTERNATIONAL HIGH SCHOOL")>  _
+        Public ReadOnly Property school_name() As String
+            Get
+                Return CType(Me("school_name"),String)
+            End Get
+        End Property
+        
+        <Global.System.Configuration.ApplicationScopedSettingAttribute(),  _
+         Global.System.Diagnostics.DebuggerNonUserCodeAttribute(),  _
+         Global.System.Configuration.DefaultSettingValueAttribute("24 J-LINE, SAM EDEM STREET, EWET HOUSING ESTATE, UYO ")>  _
+        Public ReadOnly Property school_address() As String
+            Get
+                Return CType(Me("school_address"),String)
+            End Get
+        End Property
+        
+        <Global.System.Configuration.ApplicationScopedSettingAttribute(),  _
+         Global.System.Diagnostics.DebuggerNonUserCodeAttribute(),  _
+         Global.System.Configuration.DefaultSettingValueAttribute("Knowledge is power")>  _
+        Public ReadOnly Property school_motto() As String
+            Get
+                Return CType(Me("school_motto"),String)
+            End Get
+        End Property
+        
+        <Global.System.Configuration.UserScopedSettingAttribute(),  _
+         Global.System.Diagnostics.DebuggerNonUserCodeAttribute(),  _
+         Global.System.Configuration.DefaultSettingValueAttribute("easter")>  _
+        Public Property term() As String
+            Get
+                Return CType(Me("term"),String)
+            End Get
+            Set
+                Me("term") = value
+            End Set
+        End Property
+        
+        <Global.System.Configuration.UserScopedSettingAttribute(),  _
+         Global.System.Diagnostics.DebuggerNonUserCodeAttribute(),  _
+         Global.System.Configuration.DefaultSettingValueAttribute("2019/2020")>  _
+        Public Property session() As String
+            Get
+                Return CType(Me("session"),String)
+            End Get
+            Set
+                Me("session") = value
+            End Set
+        End Property
+        
+        <Global.System.Configuration.ApplicationScopedSettingAttribute(),  _
+         Global.System.Diagnostics.DebuggerNonUserCodeAttribute(),  _
+         Global.System.Configuration.SpecialSettingAttribute(Global.System.Configuration.SpecialSetting.ConnectionString),  _
+         Global.System.Configuration.DefaultSettingValueAttribute("Data Source=(LocalDB)\MSSQLLocalDB;AttachDbFilename=|DataDirectory|\timetable_dat"& _ 
+            "a.mdf;Integrated Security=True")>  _
+        Public ReadOnly Property timetable_data_ConnectionString() As String
+            Get
+                Return CType(Me("timetable_data_ConnectionString"),String)
+            End Get
+        End Property
     End Class
 End Namespace
 

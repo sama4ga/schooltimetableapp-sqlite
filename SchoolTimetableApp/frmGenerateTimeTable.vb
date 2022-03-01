@@ -1,12 +1,13 @@
-﻿Imports MySql.Data.MySqlClient
+﻿Imports System.Data.SqlClient
 Imports System.IO
 Imports System.Text
 Imports System.Drawing.Printing
+Imports System.Linq
 
 Public Class frmGenerateTimeTable
 
-    Dim sql As MysqlCon = New MysqlCon()
-    Dim reader As MySqlDataReader
+    Dim sql As SqlCon = New SqlCon()
+    Dim reader As SqlDataReader
 
     Dim days As List(Of String) = New List(Of String)
     Dim start_time As String = String.Empty
@@ -43,10 +44,10 @@ Public Class frmGenerateTimeTable
 
 
         ' get classes
-        reader = sql.readData("SELECT * FROM `class` ORDER BY `name`;")
+        reader = sql.readData("SELECT * FROM [class] ORDER BY [name];")
         If reader.HasRows Then
             While reader.Read
-                classes.Add(reader.GetString("name"))
+                classes.Add(reader.GetString(1))
             End While
             reader.Close()
         End If
@@ -54,11 +55,11 @@ Public Class frmGenerateTimeTable
 
 
         'get teachers
-        reader = sql.readData("SELECT * FROM `teachers` ORDER BY `name`;")
+        reader = sql.readData("SELECT teacher_id,[name],isnull(Type,'') AS 'Type' FROM teachers ORDER BY [name];")
         If reader.HasRows Then
             Dim teacher As teacher
             While sql.rd.Read
-                teacher = New teacher(reader.GetString("name"), reader.GetInt16("teacher_id"))
+                teacher = New teacher(reader.GetString(1), reader.GetInt32(0), reader.GetString(2))
                 teachers.Add(teacher)
             End While
             reader.Close()
@@ -66,31 +67,49 @@ Public Class frmGenerateTimeTable
 
 
 
+        'get teachers time
+        For Each teacher As teacher In teachers
+            If Not teacher.Type.Equals("Full Time") Then
+                'get teachers
+                reader = sql.readData("SELECT * FROM teacher_available_time WHERE teacher_id='" & teacher.Id & "';")
+                If reader.HasRows Then
+                    Dim available_time As teachers_avialable_time
+                    While sql.rd.Read
+                        available_time = New teachers_avialable_time(reader.GetInt32(2), reader.GetInt32(3), reader.GetString(4))
+                        teacher.AddAvailableTime(available_time)
+                    End While
+                    reader.Close()
+                End If
+            End If
+        Next
+
+
+
         ' get subjects and other associated data
         reader = sql.readData("SELECT 
-                                s.`subject_id`,
-                                s.`name` AS 'Subject',
-                                sc.`category` AS 'Category',
-                                sc.`no_times_per_week` /*AS 'No. of Times per Week'*/,
-                                sc.`no_double_period` /*AS 'No. of Double Periods'*/,
-                                sc.`time_per_period` /*AS 'Time per Period(mins)'*/,
-                                sc.`total_time_per_week` /*AS 'Total Time per Week(mins)'*/,
-                                c.`name` AS 'Class',
-                                c.`subject_type` AS 'Class Type',
-                                ifnull(t.`name`,'') AS 'Teacher',
-                                ifnull(t.`teacher_id`,-1) AS 'teacher_id'
+                                s.subject_id,
+                                s.[name] AS 'Subject',
+                                sc.category AS 'Category',
+                                sc.no_times_per_week /*AS 'No. of Times per Week'*/,
+                                sc.no_double_period /*AS 'No. of Double Periods'*/,
+                                sc.time_per_period /*AS 'Time per Period(mins)'*/,
+                                sc.total_time_per_week /*AS 'Total Time per Week(mins)'*/,
+                                c.[name] AS 'Class',
+                                c.subject_combination /* AS 'Subject Combination' */,
+                                isnull(t.[name],'') AS 'Teacher',
+                                isnull(t.teacher_id,-1) AS 'teacher_id'
                               FROM
-                                `subjects` s
+                                subjects s
                                     JOIN
-                                `subject_class` sc ON s.`subject_id` = sc.`subject_id`
+                                subject_class sc ON s.subject_id = sc.subject_id
                                     LEFT JOIN
-                                `teacher_class` tc ON tc.`subject_id` = sc.`subject_id`
-                                    AND tc.`class_id` = sc.`class_id`
+                                teacher_class tc ON tc.subject_id = sc.subject_id
+                                    AND tc.class_id = sc.class_id
                                     JOIN
-                                `class` c ON sc.`class_id` = c.`class_id`
+                                [class] c ON sc.class_id = c.class_id
                                     LEFT JOIN
-                                `teachers` t ON t.`teacher_id` = tc.`teacher_id`
-                              ORDER BY sc.`no_double_period` desc;")
+                                teachers t ON t.teacher_id = tc.teacher_id
+                              ORDER BY sc.no_double_period desc;")
         If reader.HasRows Then
             Dim subj As subject
             Dim category As String = ""
@@ -98,16 +117,16 @@ Public Class frmGenerateTimeTable
 
             While reader.Read
 
-                If reader.GetString("Class Type").Equals("junior") Then
+                If reader.GetString(8).Equals("all") Then
                     category = "General"
                 Else
-                    category = reader.GetString("category")
+                    category = reader.GetString(2)
                 End If
 
-                subj = New subject(reader.GetString("Subject"), reader.GetInt16("time_per_period"), reader.GetInt16("no_times_per_week"), reader.GetString("Class"), reader.GetInt16("no_double_period"), category)
+                subj = New subject(reader.GetString(1), reader.GetInt32(5), reader.GetInt32(3), reader.GetString(7), reader.GetInt32(4), category)
 
                 For index = 0 To teachers.Count - 1
-                    If reader.GetInt16("teacher_id") <> -1 And teachers(index).Id.Equals(reader.GetInt16("teacher_id")) = True Then
+                    If reader.GetInt32(10) <> -1 And teachers(index).Id.Equals(reader.GetInt32(10)) = True Then
                         subj.Teacher = teachers(index)
                     End If
                 Next
@@ -120,7 +139,7 @@ Public Class frmGenerateTimeTable
                             GoTo t
                         End If
                     Next
-                    subj.Teacher = New teacher("unknown" & unknown_count)
+                    subj.Teacher = New teacher("unknown" & unknown_count, "Full Time")
                     unknown_count += 1
                 End If
 
@@ -132,11 +151,11 @@ t:              subjects.Add(subj)
 
 
         ' get breaks
-        reader = sql.readData("SELECT * FROM `misc` ORDER BY `start_time` desc;")
+        reader = sql.readData("SELECT * FROM misc ORDER BY start_time desc;")
         If reader.HasRows Then
             Dim br As break
             While reader.Read
-                br = New break(reader.GetString("details"), reader.GetString("start_time"), reader.GetString("end_time"), reader.GetString("days"))
+                br = New break(reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4))
                 breaks.Add(br)
             End While
             reader.Close()
@@ -280,11 +299,29 @@ c:                  If subjects(subject_count).SubjectClass.Equals(std_class) Th
                                 'check if teacher workload is reached: maximum workload = 5
                                 If subjects(subject_count).Teacher.WorkLoad <= 5 Then
 
+                                    'check if teacher is a part-time teacher
+                                    If Not subjects(subject_count).Teacher.Type.Equals("Full Time") Then
+
+                                        'teacher is part-time, check for available period
+                                        Dim current_time As Integer() = ConvertToTime(start_time)
+                                        Dim current_day As String = days(day_count)
+                                        Dim result = From available_time As teachers_avialable_time In subjects(subject_count).Teacher.AvailableTime
+                                                     Where available_time.Day.Equals(current_day) AndAlso current_time(0) >= available_time.StartTime AndAlso current_time(0) <= available_time.EndTime
+                                                     Select available_time.StartTime & "-" & available_time.EndTime
+
+                                        If result.Count < 1 Then
+                                            GoTo s
+                                        End If                                          'available time
+
+                                    End If                                              'part_time
+
+
                                     'check if double period is adequately spaced              subjects(subject_count).LastAdded = -1 
                                     If day_count = 0 Or subjects(subject_count).LastAdded = -1 Or day_count > subjects(subject_count).LastAdded + 1 Then
 
 
                                         'check for double period
+                                        'Dim current_time As Integer() = ConvertToTime(start_time)
                                         If subjects(subject_count).NoOfDoublePeriod > 0 And ConvertToTime(start_time)(0) <= 10 And ConvertToTime(start_time)(1) <= 10 Then
                                             Dim mem As memory
                                             'add the subject
@@ -335,23 +372,60 @@ c:                  If subjects(subject_count).SubjectClass.Equals(std_class) Th
                                                                 If subjects(subject_count).Teacher.Active = False Then
                                                                     If subjects(subject_count).Teacher.WorkLoad <= 5 Then
 
-                                                                        group_subject.Add(subjects(subject_count).Name)
-                                                                        group_category.Add(subjects(subject_count).Category)
+                                                                        'check if teacher is a part-time teacher
+                                                                        If Not subjects(subject_count).Teacher.Type.Equals("Full Time") Then
 
-                                                                        'add teacher to activeteacher list
-                                                                        subjects(subject_count).Teacher.Active = True
-                                                                        subjects(subject_count).Teacher.WorkLoad += 1
+                                                                            'teacher is part-time, check for available period
+                                                                            Dim current_time As Integer() = ConvertToTime(start_time)
+                                                                            Dim current_day As String = days(day_count)
+                                                                            Dim result = From available_time As teachers_avialable_time In subjects(subject_count).Teacher.AvailableTime
+                                                                                         Where available_time.Day.Equals(current_day) AndAlso current_time(0) >= available_time.StartTime AndAlso current_time(0) <= available_time.EndTime
+                                                                                         Select available_time.StartTime & "-" & available_time.EndTime
 
-                                                                        'add to activesubject list
-                                                                        subjects(subject_count).ActiveStatus = True
-                                                                        subjects(subject_count).LastAdded = -1
-                                                                        activeSubjects.Add(subjects(subject_count))
+                                                                            If result.Count > 0 Then
+                                                                                group_subject.Add(subjects(subject_count).Name)
+                                                                                group_category.Add(subjects(subject_count).Category)
 
-                                                                        'reduce number of times per week
-                                                                        subjects(subject_count).NoOfTimesPerWeek -= 1
-                                                                        If subjects(subject_count).NoOfTimesPerWeek <= 0 Then
-                                                                            subjects.RemoveAt(subject_count)
-                                                                        End If
+                                                                                'add teacher to activeteacher list
+                                                                                subjects(subject_count).Teacher.Active = True
+                                                                                subjects(subject_count).Teacher.WorkLoad += 1
+
+                                                                                'add to activesubject list
+                                                                                subjects(subject_count).ActiveStatus = True
+                                                                                subjects(subject_count).LastAdded = -1
+                                                                                activeSubjects.Add(subjects(subject_count))
+
+                                                                                'reduce number of times per week
+                                                                                subjects(subject_count).NoOfTimesPerWeek -= 1
+                                                                                If subjects(subject_count).NoOfTimesPerWeek <= 0 Then
+                                                                                    subjects.RemoveAt(subject_count)
+                                                                                End If
+
+                                                                            End If                                          'available time
+
+                                                                        Else
+
+                                                                            group_subject.Add(subjects(subject_count).Name)
+                                                                            group_category.Add(subjects(subject_count).Category)
+
+                                                                            'add teacher to activeteacher list
+                                                                            subjects(subject_count).Teacher.Active = True
+                                                                            subjects(subject_count).Teacher.WorkLoad += 1
+
+                                                                            'add to activesubject list
+                                                                            subjects(subject_count).ActiveStatus = True
+                                                                            subjects(subject_count).LastAdded = -1
+                                                                            activeSubjects.Add(subjects(subject_count))
+
+                                                                            'reduce number of times per week
+                                                                            subjects(subject_count).NoOfTimesPerWeek -= 1
+                                                                            If subjects(subject_count).NoOfTimesPerWeek <= 0 Then
+                                                                                subjects.RemoveAt(subject_count)
+                                                                            End If
+
+                                                                        End If                                              'part_time
+
+
 
                                                                     End If
 
@@ -364,7 +438,7 @@ c:                  If subjects(subject_count).SubjectClass.Equals(std_class) Th
                                                         IncreaseSubjectCount(subject_count, subjects)
 
                                                         trials += 1
-                                                        If trials > subjects.Count Then
+                                                        If trials > subjects.Count * 2 Then
                                                             Exit Do
                                                         End If
 
@@ -395,8 +469,11 @@ c:                  If subjects(subject_count).SubjectClass.Equals(std_class) Th
                                                     GoTo b
 
                                                 End If
-                                            End If
+                                            End If                                                                   ' group addition
 
+
+
+                                            ' group limit reached
 
                                             'add the subject
                                             dgvTimetable.Rows(row_count).Cells(col_count).Value = subjects(subject_count).Name
@@ -438,8 +515,8 @@ c:                  If subjects(subject_count).SubjectClass.Equals(std_class) Th
 
                     End If                                                               ' class
 
-                    trials += 1
-                    If trials > subjects.Count Then
+s:                  trials += 1
+                    If trials > subjects.Count * 2 Then
                         'add the subject
                         dgvTimetable.Rows(row_count).Cells(col_count).Value = ""
                         row_count += 6
@@ -564,7 +641,7 @@ b:              Next std_class
     ''' <param name="teachers">List holding details of teachers</param>
     ''' <returns>Teacher</returns>
     Private Function CheckTeacher(teacherName As String, teachers As List(Of teacher)) As teacher
-        Dim newteacher As teacher = New teacher(teacherName)
+        Dim newteacher As teacher = New teacher(teacherName, "Full Time")
         Dim index As Integer = teachers.IndexOf(newteacher)
         Return teachers(index)
     End Function
@@ -587,50 +664,50 @@ b:              Next std_class
         If sfd.ShowDialog = DialogResult.OK Then
             'Save(sfd.FileName)
             timetableFilename = sfd.FileName.Split("\").Last
-        End If
+            'timetableFilename = "timetable" & DateTime.Now.ToString("yyyyMMddHHmmss") & ".csv"
 
-        'timetableFilename = "timetable" & DateTime.Now.ToString("yyyyMMddHHmmss") & ".csv"
+            Dim Data As StringBuilder = New StringBuilder()
+            Dim str As String = String.Empty
 
-        Dim Data As StringBuilder = New StringBuilder()
-        Dim str As String = String.Empty
-
-        For index = 0 To dgvTimetable.ColumnCount - 1
-            If index = dgvTimetable.ColumnCount - 1 Then
-                str &= dgvTimetable.Columns(index).Name '& "'" & ";" "'" & 
-            Else
-                str &= dgvTimetable.Columns(index).Name & "," '& "'"  "'" &
-            End If
-        Next
-        Data.AppendLine(str)
-        str = String.Empty
-
-        For row = 0 To dgvTimetable.RowCount - 1
-
-            If dgvTimetable.Rows(row).IsNewRow Then Exit For
-
-            For col = 0 To dgvTimetable.ColumnCount - 1
-
-                If col = dgvTimetable.ColumnCount - 1 Then
-                    If dgvTimetable.Rows(row).Cells(col).Value = Nothing Then
-                        dgvTimetable.Rows(row).Cells(col).Value = ""
-                    End If
-                    str &= dgvTimetable.Rows(row).Cells(col).Value.ToString() '& "'"  & ";"   "'" &
-
+            For index = 0 To dgvTimetable.ColumnCount - 1
+                If index = dgvTimetable.ColumnCount - 1 Then
+                    str &= dgvTimetable.Columns(index).Name '& "'" & ";" "'" & 
                 Else
-                    If dgvTimetable.Rows(row).Cells(col).Value = Nothing Then
-                        dgvTimetable.Rows(row).Cells(col).Value = ""
-                    End If
-                    str &= dgvTimetable.Rows(row).Cells(col).Value.ToString() & ","   '& "'"   "'" &
+                    str &= dgvTimetable.Columns(index).Name & "," '& "'"  "'" &
                 End If
             Next
-
             Data.AppendLine(str)
             str = String.Empty
-        Next
+
+            For row = 0 To dgvTimetable.RowCount - 1
+
+                If dgvTimetable.Rows(row).IsNewRow Then Exit For
+
+                For col = 0 To dgvTimetable.ColumnCount - 1
+
+                    If col = dgvTimetable.ColumnCount - 1 Then
+                        If dgvTimetable.Rows(row).Cells(col).Value = Nothing Then
+                            dgvTimetable.Rows(row).Cells(col).Value = ""
+                        End If
+                        str &= dgvTimetable.Rows(row).Cells(col).Value.ToString() '& "'"  & ";"   "'" &
+
+                    Else
+                        If dgvTimetable.Rows(row).Cells(col).Value = Nothing Then
+                            dgvTimetable.Rows(row).Cells(col).Value = ""
+                        End If
+                        str &= dgvTimetable.Rows(row).Cells(col).Value.ToString() & ","   '& "'"   "'" &
+                    End If
+                Next
+
+                Data.AppendLine(str)
+                str = String.Empty
+            Next
 
 
-        IO.File.WriteAllText(dir.FullName & "\" & timetableFilename, Data.ToString(), Encoding.UTF8)
-        MsgBox("Timetable successfully saved",, "Save Timetable")
+            IO.File.WriteAllText(dir.FullName & "\" & timetableFilename, Data.ToString(), Encoding.UTF8)
+            MsgBox("Timetable successfully saved",, "Save Timetable")
+        End If
+
 
 
     End Sub
@@ -834,5 +911,27 @@ b:              Next std_class
                 rc.Offset(2, 0)
         End Select
 
+    End Sub
+
+    Private Sub btnManuallyAdjust_Click(sender As Object, e As EventArgs) Handles btnManuallyAdjust.Click
+        If String.IsNullOrEmpty(timetableFilename) Then
+            If MsgBox("Are you sure you want to proceed without saving the timetable" & vbCrLf & vbCrLf & "The generated timetabel will be lost if you proceed", MsgBoxStyle.Question & MsgBoxStyle.YesNo) = MsgBoxResult.Yes Then
+                frmAdjustTimetable.Show()
+                Close()
+            Else
+                btnSave.PerformClick()
+            End If
+        End If
+    End Sub
+
+    Private Sub btnReduce_Click(sender As Object, e As EventArgs) Handles btnReduce.Click
+        If String.IsNullOrEmpty(timetableFilename) Then
+            If MsgBox("Are you sure you want to proceed without saving the timetable" & vbCrLf & vbCrLf & "The generated timetabel will be lost if you proceed", MsgBoxStyle.Question & MsgBoxStyle.YesNo) = MsgBoxResult.Yes Then
+                frmManageSubjects.Show()
+                Close()
+            Else
+                btnSave.PerformClick()
+            End If
+        End If
     End Sub
 End Class
